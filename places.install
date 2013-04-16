@@ -1,0 +1,12 @@
+<?php
+
+function places_install() {
+  // Set the weight of the places.module to 101 so it is loaded after other modules
+  db_update('system')->fields(array('weight' => 101))->condition('name', 'places')->execute();
+}
+
+function places_enable() {
+}
+
+function places_uninstall() {
+}

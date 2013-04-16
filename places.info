@@ -1,0 +1,6 @@
+name = Places
+description = A module that provides a taxonomy for storing place names and associated geographic metadata.
+core = 7.x
+package = Places
+
+dependencies[] = places_vocabulary

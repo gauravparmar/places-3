@@ -1,0 +1,222 @@
+<?php
+
+function places_vocabulary_install() {
+  // Set the weight of the places_vocabulary.module to 100 so it is loaded after other modules
+  db_update('system')->fields(array('weight' => 100))->condition('name', 'places_vocabulary')->execute();
+}
+
+function places_vocabulary_enable() {
+  // Need to make sure field config data is loaded for our dependencies
+  field_associate_fields('taxonomy');
+  field_associate_fields('list');
+  field_associate_fields('text');
+  field_associate_fields('geofield');
+
+  // Create the places vocabulary if it does not exist.
+  $vocabularies = taxonomy_vocabulary_get_names();
+  if (empty($vocabularies['places'])) {
+    $edit = array(
+      'name' => t('Places'),
+      'machine_name' => 'places',
+      'description' => t('Places hierarchy vocabulary'),
+      'hierarchy' => 1,
+      'module' => 'places_vocabulary',
+      'weight' => -10,
+    );
+    taxonomy_vocabulary_save((object) $edit);
+  }
+
+  // Default fields for the vocabulary
+  $fields = array (
+    // Continent field
+	  'places_continent' => array(
+      'field' => array(
+        'type' => 'list_text',
+        'settings' => array(
+          'allowed_values' => array(
+            'Africa' => t('Africa'),
+            'Europe' => t('Europe'),
+            'Asia' => t('Asia'),
+            'North America' => t('North America'),
+            'South America' => t('South America'),
+            'Antarctica' => t('Antarctica'),
+            'Oceania' => t('Oceania'), 
+          )
+        ),
+      ),
+      'instance' => array(
+        'label' => t('Continent'),
+        'description' => '',
+        'widget' => array (
+          'type' => 'options_select', 
+          'required' => TRUE,
+          'settings' => array('default_value' => NULL),
+        ),
+      ),
+	  ),
+    // Country field
+	  'places_country' => array(
+      'field' => array(
+        'type' => 'text',
+        'settings' => array(
+          'max_length' => 255,
+        )
+      ),
+      'instance' => array(
+        'label' => t('Country'),
+        'description' => '',
+        'required' => FALSE,
+        'widget' => array(
+          'type' => 'text_textfield',
+          'settings' => array('size' => 20),
+        ),        
+      ),
+	  ),
+    // Administrative Area field
+	  'places_admin1' => array(
+      'field' => array(
+        'type' => 'text',
+        'settings' => array(
+          'max_length' => 255,
+        )
+      ),
+      'instance' => array(
+        'label' => t('Administrative Area'),
+        'description' => '',
+        'required' => FALSE,
+        'widget' => array(
+          'type' => 'text_textfield',
+          'settings' => array('size' => 20),
+        ),        
+      ),
+	  ),
+    // Sub Administrative Area field
+	  'places_admin2' => array(
+      'field' => array(
+        'type' => 'text',
+        'settings' => array(
+          'max_length' => 255,
+        )
+      ),
+      'instance' => array(
+        'label' => t('Sub Administrative Area'),
+        'description' => '',
+        'required' => FALSE,
+        'widget' => array(
+          'type' => 'text_textfield',
+          'settings' => array('size' => 20),
+        ),        
+      ),
+	  ),
+    // Locality field
+	  'places_locality' => array(
+      'field' => array(
+        'type' => 'text',
+        'settings' => array(
+          'max_length' => 255,
+        )
+      ),
+      'instance' => array(
+        'label' => t('Locality'),
+        'description' => '',
+        'required' => FALSE,
+        'widget' => array(
+          'type' => 'text_textfield',
+          'settings' => array('size' => 20),
+        ),        
+      ),
+	  ),
+    // Suburb field
+	  'places_suburb' => array(
+      'field' => array(
+        'type' => 'text',
+        'settings' => array(
+          'max_length' => 255,
+        )
+      ),
+      'instance' => array(
+        'label' => t('Suburb'),
+        'description' => '',
+        'required' => FALSE,
+        'widget' => array(
+          'type' => 'text_textfield',
+          'settings' => array('size' => 20),
+        ),        
+      ),
+	  ),
+    // Postcode field
+	  'places_postcode' => array(
+      'field' => array(
+        'type' => 'text',
+        'settings' => array(
+          'max_length' => 255,
+        )
+      ),
+      'instance' => array(
+        'label' => t('Postcode'),
+        'description' => '',
+        'required' => FALSE,
+        'widget' => array(
+          'type' => 'text_textfield',
+          'settings' => array('size' => 20),
+        ),        
+      ),
+	  ),
+    // Geofield for lat/long 
+	  'places_geofield' => array(
+      'field' => array(
+        'type' => 'geofield',
+        'settings' => array(
+        )
+      ),
+      'instance' => array(
+        'label' => t('Geographic Location'),
+        'description' => '',
+        'required' => TRUE,
+        'widget' => array(
+        ),        
+      ),
+	  ),
+  );
+
+  // For each field defined above, create the field and the instance
+  foreach ($fields as $field_name => &$data) {
+    // Create the field if needed
+    $field = field_info_field($field_name);
+    if (empty($field)) {
+      $field = $data['field'];
+      $field['field_name'] = $field_name;
+      $field['cardinality'] = 1;
+      $field = field_create_field($field);
+    }
+    $data['field'] = $field;
+
+    // Create the instance if needed
+    $instance = field_info_instance('taxonomy_term',$field_name,'places');
+    if (empty($instance)) {
+      $instance = $data['instance'];
+      $instance['field_name'] = $field_name;
+      $instance['entity_type'] = 'taxonomy_term';
+      $instance['bundle'] = 'places';
+      $instance = field_create_instance($instance);
+    }
+    $data['instance'] = $instance;
+  }
+}
+
+function places_vocabulary_uninstall() {
+  // Load modules needed for fields
+  drupal_load('module', 'taxonomy');
+  drupal_load('module', 'list');
+  drupal_load('module', 'text');
+  drupal_load('module', 'geofield');
+
+  // Delete the vocab
+  $vocabularies = taxonomy_vocabulary_get_names();
+  if (!empty($vocabularies['places'])) {
+    taxonomy_vocabulary_delete($vocabularies['places']->vid);
+  }
+
+  // Purge deleted fields
+  field_purge_batch(10);
+}

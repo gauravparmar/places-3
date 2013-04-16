@@ -1,0 +1,13 @@
+name = Places Vocabulary
+description = Module that controls places vocabulary
+core = 7.x
+package = Places
+
+dependencies[] = taxonomy
+dependencies[] = text
+dependencies[] = list
+dependencies[] = options
+dependencies[] = geofield
+
+
+
