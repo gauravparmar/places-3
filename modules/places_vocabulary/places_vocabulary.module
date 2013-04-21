@@ -1,1 +1,11 @@
 <?php
+
+function computed_field_places_computed_location_compute(&$entity_field, $entity_type, $entity, $field, $instance, $langcode, $items)
+{
+  $location = array();
+  foreach (array('places_suburb','places_locality','places_admin2','places_admin1','places_country','places_postcode') as $field_name) {
+    $items = field_get_items($entity_type,$entity,$field_name);
+    if (!empty($items[0]['value'])) $location[]= $items[0]['value'];
+  }
+  $entity_field[0]['value'] = implode(',',$location);
+}

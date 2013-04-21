@@ -162,6 +162,30 @@ function places_vocabulary_enable() {
         ),        
       ),
 	  ),
+    // Computed Place name
+    'places_computed_location' => array(
+      'field' => array(
+        'type' => 'computed',
+        'settings' => array(
+           'store' => 0,
+        )
+      ),
+      'instance' => array(
+        'label' => t('Computed Location'),
+        'description' => '',
+        'required' => TRUE,
+        'widget' => array(
+          'type' => 'computed',
+        ),        
+        'display' => array(
+          'default' => array(
+            'type' => 'computed_field_plain',
+            'settings' => array(
+            ),
+          ),          
+        ),
+      ),
+    ),
     // Geofield for lat/long 
 	  'places_geofield' => array(
       'field' => array(
@@ -174,7 +198,13 @@ function places_vocabulary_enable() {
         'description' => '',
         'required' => TRUE,
         'widget' => array(
-        ),        
+          'type' => 'geocoder',
+          'settings' => array(
+              'geocoder_field' => 'places_computed_location',
+              'geocoder_handler' => 'yahoo',
+              'delta_handling' => 'default',
+          ),
+        ),   
       ),
 	  ),
   );

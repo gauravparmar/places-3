@@ -8,6 +8,4 @@ dependencies[] = text
 dependencies[] = list
 dependencies[] = options
 dependencies[] = geofield
-
-
-
+dependencies[] = geocoder
