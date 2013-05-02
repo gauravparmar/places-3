@@ -3,9 +3,21 @@
 function computed_field_places_computed_location_compute(&$entity_field, $entity_type, $entity, $field, $instance, $langcode, $items)
 {
   $location = array();
-  foreach (array('places_suburb','places_locality','places_admin2','places_admin1','places_country','places_postcode') as $field_name) {
-    $items = field_get_items($entity_type,$entity,$field_name);
-    if (!empty($items[0]['value'])) $location[]= $items[0]['value'];
+  foreach (array('places_suburb','places_locality','places_admin2','places_admin1','places_postcode','places_country') as $field_name) {
+    $i = field_get_items($entity_type,$entity,$field_name);
+    if (!empty($i[0]['value'])) $location[]= $i[0]['value'];
   }
   $entity_field[0]['value'] = implode(',',$location);
+}
+
+function places_vocabulary_field_attach_presave($entity_type, $entity) {
+  if ($entity_type === 'taxonomy_term' && $entity->vocabulary_machine_name === 'places') {
+    $field = field_info_field('places_computed_location');
+    $instance = field_info_instance('taxonomy_term','places_computed_location','places');
+    $langcode = field_language('taxonomy_term', $entity, 'places_computed_location', NULL);
+
+    if (!isset($entity->places_computed_location[$langcode])) $entity->places_computed_location[$langcode] = array();
+    $entity_field =& $entity->places_computed_location[$langcode];
+    computed_field_places_computed_location_compute($entity_field, $entity_type, $entity, $field, $instance, $langcode, $entity_field);
+  }
 }

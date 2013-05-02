@@ -3,6 +3,8 @@
 function places_vocabulary_install() {
   // Set the weight of the places_vocabulary.module to 100 so it is loaded after other modules
   db_update('system')->fields(array('weight' => 100))->condition('name', 'places_vocabulary')->execute();
+  // Make sure that geocoder is after this one
+  db_update('system')->fields(array('weight' => 101))->condition('name', 'geocoder')->execute();
 }
 
 function places_vocabulary_enable() {
@@ -198,13 +200,10 @@ function places_vocabulary_enable() {
         'description' => '',
         'required' => TRUE,
         'widget' => array(
-          'type' => 'geocoder',
+          'type' => 'geofield_latlon',
           'settings' => array(
-              'geocoder_field' => 'places_computed_location',
-              'geocoder_handler' => 'yahoo',
-              'delta_handling' => 'default',
           ),
-        ),   
+        ),
       ),
 	  ),
   );

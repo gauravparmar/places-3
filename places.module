@@ -1,1 +1,276 @@
 <?php
+
+function places_menu() {
+  $items['places/autocomplete'] = array(
+    'title' => 'Autocomplete places',
+    'page callback' => 'places_autocomplete',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_field_widget_info().
+ */
+function places_field_widget_info() {
+  return array(
+    'places_autocomplete' => array(
+      'label' => t('Places autocomplete widget'),
+      'field types' => array('taxonomy_term_reference'),
+      'settings' => array(
+        'size' => 60,
+        'autocomplete_path' => 'places/autocomplete',
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_widget_form().
+ */
+function places_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+
+  if (!empty($items[$delta]['tid'])) {
+    $term = taxonomy_term_load($items[$delta]['tid']);
+  }
+
+  $element = array(
+    '#type' => 'textfield',
+    '#default_value' => isset($term)?$term->name:NULL,
+    '#autocomplete_path' => $instance['widget']['settings']['autocomplete_path'],
+    '#size' => $instance['widget']['settings']['size'],
+    '#maxlength' => 1024,
+    '#element_validate' => array('places_autocomplete_validate'),
+    '#custom' => array (
+      'tid' => isset($term)?$term->tid:0,
+    ),
+  );
+
+  return $element;
+}
+
+/**
+ * Form element validate handler for places taxonomy term autocomplete element.
+ */
+function places_autocomplete_validate($element, &$form_state) {
+  $term = null;
+
+  $name = $element['#value'];
+  
+  $matches = array();
+  $nid = 0;
+
+  // This preg_match() looks for the last pattern like [N33334] and if found extracts the numeric portion.
+  $result = preg_match('/\[([NWR])([0-9]+)\]$/', $name, $matches);
+  if ($result > 0) {
+    // Found a place... look it up
+    
+    // In cache or not?
+    if (($place = cache_get('places'.$matches[0]))) {
+      $place = $place->data;
+    }
+    else {
+      // Reverse lookup it
+      $api_url = "http://open.mapquestapi.com/nominatim/v1/reverse.php";
+      $params = array(
+        'format' => 'json',
+        'osm_id' => $matches[2],
+        'osm_type' => $matches[1],
+      );
+      $request = drupal_http_request($api_url . '?' . drupal_http_build_query($params));
+      $place = json_decode($request->data);
+      cache_set('places'.$matches[0],$place);
+    }
+    
+    // Lock this so we don't have race conditions that create multiple terms for a location
+    if (lock_acquire('places_create_terms')) {
+      // This is too crude!
+      $mappings = array(
+        'places_country' => array('country'),
+        'places_admin1' => array('state'),
+        'places_admin2' => array('county'),
+        'places_locality' => array('town','city','island', 'moor', 'waterways','village', 'hamlet', 'municipality', 'district', 'borough'),
+        'places_suburb' => array('suburb','croft', 'subdivision', 'farm', 'locality', 'islet'),
+        'places_postcode' => array('postcode'),
+      );
+      $fields = array();
+      foreach($mappings as $field_name => $mapping) {
+        foreach($mapping as $source) {
+          if (!empty($place->address->{$source})) {
+            $fields[$field_name] = $place->address->{$source};
+            break;
+          }
+        }
+      }      
+
+      $term = (array)_places_create_term($fields,$place);
+      
+      lock_release('places_create_terms');
+    }      
+  }
+  // BUT: Not everybody will have javascript turned on, or they might hit ESC and not use the autocomplete values
+  // offered. In that case, we can attempt to come up with a useful value. This is not absolutely necessary,
+  // and we *could* just emit a form_error() as below.
+  else {
+    $query = db_select('taxonomy_term')->fields('taxonomy_term', array('tid'))->addExpression('taxonomy_term.tid = :tid','is_original', array(':tid'=>$element['#custom']['tid']));
+      
+    $query->condition('name', $name)
+          ->range(0, 1)
+          ->orderBy('is_original','DESC');
+    $tid = $query->execute()->fetchField();
+    if (!empty($tid)) $term = taxonomy_term_load($tid);
+  }
+
+  // Now, if we somehow found a nid, assign it to the node. If we failed, emit an error.
+  if (!empty($term)) {
+    form_set_value($element, $term , $form_state);
+  }
+  else {
+    form_error($form['node'], t('Sorry, no node starting with %title can be found', array('%title' => $title)));
+  }  
+}
+
+
+/**
+ * Page callback: Outputs JSON for taxonomy autocomplete suggestions.
+ *
+ * Path: places/autocomplete
+ */
+function places_autocomplete($place_name = '') {
+  // If the request has a '/' in the search text, then the menu system will have
+  // split it into multiple arguments, recover the intended $place_name.
+  $args = func_get_args();
+  $place_name = implode('/', $args);
+
+  $place_matches = array();
+  if ($place_name != '') {
+
+    if (($ids = cache_get('places_search:'.$place_name))) {
+      $ids = $ids->data;
+      foreach ($ids as $id) {
+        $place = cache_get('places['.$id.']');
+        $place=$place->data;
+        $place_matches[$place->display_name.' ['.$id.']'] = check_plain($place->display_name);
+      }
+    }
+    else {
+      $api_url = "http://open.mapquestapi.com/nominatim/v1/search";
+      $params = array(
+        'q' => $place_name,
+        'format' => 'json',
+        'addressdetails' => 1,
+        'limit' => 15,
+      );
+      $request = drupal_http_request($api_url . '?' . drupal_http_build_query($params));
+      $data = json_decode($request->data);
+      $ids = array();
+      foreach ($data as $place) {
+        $id = strtoupper($place->osm_type[0]).$place->osm_id;
+        $place_matches[$place->display_name.' ['.$id.']'] = check_plain($place->display_name);
+        cache_set('places['.$id.']',$place);      
+      }
+      cache_set('places_search:'.$place_name,$ids);
+    }
+  }
+
+  drupal_json_output($place_matches);
+}
+
+function _places_create_term(&$fields,$place=NULL) {
+  $term = NULL;
+  
+  $efq = new EntityFieldQuery;
+  $efq->entityCondition('entity_type', 'taxonomy_term');
+  $efq->entityCondition('bundle', 'places');
+  foreach ($fields as $field_name => $value) {
+    if (!empty($value)) 
+      $efq->fieldCondition($field_name, 'value', $value);
+  }
+  $result = $efq->execute();
+  
+  if (!empty($result['taxonomy_term'])) {
+    $tids = array_keys($result['taxonomy_term']);
+    $terms = taxonomy_term_load_multiple($tids);
+    if ($terms) foreach ($terms as $t) {
+      foreach ($fields as $field_name => $value) {
+        if (empty($value)) {
+          $items = field_get_items('taxonomy_term',$t,$field_name);
+          if (!empty($items['value']))
+            continue 2;
+        }
+      }                
+      
+      // this term is us!
+      $term = $t;
+      break;
+    }
+  }
+
+  // Term for us doesn't exist... uh oh!
+  if (empty($term)) {
+    $term = new stdClass;
+
+    $fields_parent = $fields;
+    array_pop($fields_parent);
+    $parent = empty($fields_parent)?NULL:_places_create_term($fields_parent);
+    if ($parent) $term->parent = $parent->tid;
+    
+    $vocabularies = taxonomy_vocabulary_get_names();
+    $term->vid = $vocabularies['places']->vid;
+    $term->vocabulary_machine_name = 'places';
+
+    $name = array();
+    foreach (array('places_suburb','places_locality','places_admin2','places_admin1','places_postcode','places_country') as $field_name) {
+      if (!empty($fields[$field_name]))
+        $name[] = $fields[$field_name];
+    }
+    $term->name = implode(', ',$name);
+    
+    foreach ($fields as $field_name => $value) {
+      $term->{$field_name} = array(
+        LANGUAGE_NONE => array(
+          0 => array(
+            'value' => $value,
+          ),
+        ),
+      );
+    }    
+
+    if (empty($place)) {
+      $place = cache_get('places:geo:'.$term->name);      
+      if ($place) $place = $place->data;
+
+      if (empty($place)) {
+        $api_url = "http://open.mapquestapi.com/nominatim/v1/search";
+        $params = array(
+          'q' => $term->name,
+          'format' => 'json',
+          'addressdetails' => 0,
+          'limit' => 1,
+        );      
+        $request = drupal_http_request($api_url . '?' . drupal_http_build_query($params));
+        $data = json_decode($request->data);
+        if (!empty($data)) {
+          $place = $data[0];
+        }
+      }
+    }
+    
+    if (!empty($place)) {
+      cache_set('places:geo:'.$term->name,$place);      
+      $term->places_geofield = array(
+        LANGUAGE_NONE => array(
+          0 => array(
+            'lat' => $place->lat,
+            'lon' => $place->lon,
+          ),
+        ),
+      );
+    }
+    taxonomy_term_save($term);
+  }
+
+  return $term;
+}
