@@ -38,13 +38,13 @@ function places_field_widget_form(&$form, &$form_state, $field, $instance, $lang
 
   $element = array(
     '#type' => 'textfield',
-    '#default_value' => isset($term)?$term->name:NULL,
+    '#default_value' => !empty($term)?$term->name:NULL,
     '#autocomplete_path' => $instance['widget']['settings']['autocomplete_path'],
     '#size' => $instance['widget']['settings']['size'],
     '#maxlength' => 1024,
     '#element_validate' => array('places_autocomplete_validate'),
     '#custom' => array (
-      'tid' => isset($term)?$term->tid:0,
+      'tid' => !empty($term)?$term->tid:0,
     ),
   );
 
@@ -96,6 +96,11 @@ function places_autocomplete_validate($element, &$form_state) {
         'places_postcode' => array('postcode'),
       );
       $fields = array();
+      
+      // First thing, get continent
+      module_load_include('inc','places','places.continents');
+      $fields['places_continent'] = places_get_continent_for_country($place->address->country_code);
+      
       foreach($mappings as $field_name => $mapping) {
         foreach($mapping as $source) {
           if (!empty($place->address->{$source})) {
@@ -221,12 +226,20 @@ function _places_create_term(&$fields,$place=NULL) {
     $term->vid = $vocabularies['places']->vid;
     $term->vocabulary_machine_name = 'places';
 
-    $name = array();
+    $name = '';
     foreach (array('places_suburb','places_locality','places_admin2','places_admin1','places_postcode','places_country') as $field_name) {
-      if (!empty($fields[$field_name]))
-        $name[] = $fields[$field_name];
+      if (!empty($fields[$field_name])) {
+        $name = $fields[$field_name];
+        break;
+      }
     }
-    $term->name = implode(', ',$name);
+    // Special Handling for continent
+    if (empty($name) && !empty($fields['places_continent'])) {
+      module_load_include('inc','places','places.continents');
+      $continents = places_get_continents();
+      $name = $continents[$fields['places_continent']];
+    }
+    $term->name = $name;
     
     foreach ($fields as $field_name => $value) {
       $term->{$field_name} = array(
